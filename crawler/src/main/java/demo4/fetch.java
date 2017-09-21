@@ -1,7 +1,14 @@
 package demo4;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -18,8 +25,8 @@ public class fetch {
 	
 	private static CloseableHttpClient client = HttpClients.createDefault();
 		
+	private static String cookie= "";
 
-	private static String cookie = "";
 	
 	private static String userDetailUrl = "https://www.zhihu.com/api/v4/members/";
 	private static String userDetailQueryString = "?include=locations,employments,gender,educations,business,voteup_count,thanked_Count,follower_count,following_count,cover_url,following_topic_count,following_question_count,following_favlists_count,following_columns_count,avatar_hue,answer_count,articles_count,pins_count,question_count,columns_count,commercial_question_count,favorite_count,favorited_count,logs_count,marked_answers_count,marked_answers_text,message_thread_token,account_status,is_active,is_bind_phone,is_force_renamed,is_bind_sina,is_privacy_protected,sina_weibo_url,sina_weibo_name,show_sina_weibo,is_blocking,is_blocked,is_following,is_followed,mutual_followees_count,vote_to_count,vote_from_count,thank_to_count,thank_from_count,thanked_count,description,hosted_live_count,participated_live_count,allow_message,industry_category,org_name,org_homepage,badge[?(type=best_answerer)].topics";
@@ -44,11 +51,75 @@ public class fetch {
 	
 	
 	private static String userToken = "su-xin-70-51";
+	
+	
+	private static Map<String,String> tokens = new ConcurrentHashMap<>();
+	private static BlockingQueue<String> queue = new LinkedBlockingQueue<>();
+	private static BlockingQueue<String> userList = new LinkedBlockingQueue<>();
+	
+	private static AtomicInteger counter = new AtomicInteger(0);
+	
+	private static volatile boolean working = true;
+	
+	
+	static class fetcher implements Runnable{
+
+		@Override
+		public void run() {
+			while(working) {
+				try {
+					String token = queue.take();
+					getUserFollowees(token);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				
+				int count = counter.incrementAndGet();
+				if(count >=1000)
+					working =false;
+			}
+			
+			
+		}
+		
+	}
+	
+	static class Parser implements Runnable{
+
+		@Override
+		public void run() {
+			while(working || userList.size() > 0) {
+				try {
+					String token = userList.take();
+					String content = getUserDetail(token);
+					parseJsonUserDetail(content);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				
+			}
+			
+		}
+		
+	}
+	
+	
 
 	public static void main(String[] args) {
+		try {
+			queue.put(userToken);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		ExecutorService pool = Executors.newFixedThreadPool(6);
+		pool.submit(new fetcher());
+		//pool.submit(new fetcher());
+		//pool.submit(new Parser());
+		//pool.submit(new Parser());
+		//pool.submit(new Parser());
+		pool.submit(new Parser());
 		
-		getUserFollowees(userToken);
-		
+		pool.shutdown();
 	}
 	
 	//请求用户关注人页面,并解析
@@ -63,10 +134,9 @@ public class fetch {
 			try {
 				CloseableHttpResponse response = client.execute(request);
 				 content= EntityUtils.toString(response.getEntity(), "UTF-8");
+				// System.out.println(content);
 				response.close();
 				request.releaseConnection();
-				
-				
 			} catch (ClientProtocolException e) {
 				e.printStackTrace();
 			} catch (IOException e) {
@@ -80,12 +150,20 @@ public class fetch {
 			running = !next.getBoolean("is_end");
 			if(running)
 				url = next.getString("next");
-//			System.out.println("111111111111111111111111"+"     running:"+running);
-//			System.out.println(url);
 			JSONArray list = jsonObject.getJSONArray("data");
 			for(int i=0; i<list.size(); i++) {
 				JSONObject user = list.getJSONObject(i);
-				System.out.println(user.getString("url_token"));
+				String token = user.getString("url_token");
+				if(tokens.containsKey(token))
+					continue;
+				//System.out.println(token);
+				counter.incrementAndGet();
+				try {
+					queue.put(token);
+					userList.put(token);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
 			}
 			
 		}
@@ -98,13 +176,14 @@ public class fetch {
 	//请求用户信息页面
 	public static String getUserDetail(String userToken) {
 		String url = userDetailUrl+userToken+userDetailQueryString;
+		//System.out.println(url);
 		HttpGet request = new HttpGet(url);
 		request.setHeader("Cookie", cookie);
 		request.setHeader("User-Agent", userAgentArray[random.nextInt(userAgentArray.length)]);
 		try {
 			CloseableHttpResponse response = client.execute(request);
 			String content = EntityUtils.toString(response.getEntity(), "UTF-8");
-			System.out.println(content);
+			//System.out.println(content);
 			response.close();
 			return content;
 		} catch (IOException e) {
@@ -115,7 +194,8 @@ public class fetch {
 	}
 	
 	//解析用户信息
-	public static void parseJsonUserDetail(String content, User user) {
+	public static void parseJsonUserDetail(String content) {
+		User user = new User();
 		JSONObject jsonObject = JSONObject.fromObject(content);
 		user.setAnswers(jsonObject.getInt("answer_count"));
 		user.setUsername(jsonObject.getString("name"));

@@ -50,6 +50,8 @@ public class ObjectPool<T> {
 	
 	
 	private Poolable<T> getObject(boolean blocking){
+		if(shutdown)
+			throw new IllegalStateException("object pool is shutdown");
 		int partition = (int) (Thread.currentThread().getId() % poolConfig.getPartitionSize());
 		ObjectPoolPartition<T> subPool = partitions[partition];
 		Poolable<T> obj = subPool.getObjectQueue().poll();
@@ -65,7 +67,7 @@ public class ObjectPool<T> {
                     }
                 }
             } catch (InterruptedException e) {
-                throw new RuntimeException(e); // will never happen
+                throw new RuntimeException(e); 
             }
 		}
 		obj.setLastAccessT(System.currentTimeMillis());

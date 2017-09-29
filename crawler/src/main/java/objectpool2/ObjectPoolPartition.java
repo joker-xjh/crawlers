@@ -36,7 +36,7 @@ public class ObjectPoolPartition<T> {
 	
 	
 	public synchronized int increaseObjects(int num) {
-		if(num - totalCount >  poolConfig.getMaxSize()) {
+		if(num + totalCount >  poolConfig.getMaxSize()) {
 			num = poolConfig.getMaxSize() - totalCount;
 		}
 		
@@ -67,11 +67,13 @@ public class ObjectPoolPartition<T> {
 			 return;
 		 Poolable<T> obj = null;
 		 long now = System.currentTimeMillis();
-		 while(num-- > 0 && (obj = objectQueue.peek()) != null) {
+		 while(num-- > 0 && (obj = objectQueue.poll()) != null) {
 			 if(now - obj.getLastAccessT() > poolConfig.getScavengeIntervalMilliseconds() && 
 					 ThreadLocalRandom.current().nextDouble(1) < poolConfig.getScavengeRatio()) {
 				 this.decreaseObject(obj);
-				 objectQueue.poll();
+			 }
+			 else {
+				 objectQueue.put(obj);
 			 }
 			 
 		 }

@@ -38,7 +38,7 @@ public class Poolable<T> implements AutoCloseable {
 	}
 	
 	public void returnObject() {
-		
+		pool.returnObject(this);
 	}
 	
 

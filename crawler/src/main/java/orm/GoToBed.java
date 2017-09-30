@@ -85,7 +85,7 @@ public class GoToBed {
 			if(i <list.size() -1)
 				sb.append(",");
 		}
-		sb.append(");");
+		sb.append(")");
 		String sql = sb.toString();
 		System.out.println(sql);
 		Connection connection = bedProvider.getConnection();
@@ -201,7 +201,7 @@ public class GoToBed {
 		sb.append(getTableNameFor(field.getDeclaringClass())).append(" ");
 		sb.append("add").append(" ");
 		sb.append(getColumnNameFor(field)).append(" ");
-		sb.append(getStringColumnTypeFor(field.getType())).append(";");
+		sb.append(getStringColumnTypeFor(field.getType()));
 		String sql = sb.toString();
 		System.out.println(sql);
 		Statement statement = connection.createStatement();
@@ -257,9 +257,7 @@ public class GoToBed {
 		sb.append(")");
 		String sql = sb.toString();
 		System.out.println(sql);
-		Connection connection =null;
-		try {
-			connection = bedProvider.getConnection();
+		try (Connection connection = bedProvider.getConnection()){
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			for(int i=0; i<fields.size(); i++) {
 				Field field = fields.get(i);
@@ -268,16 +266,8 @@ public class GoToBed {
 				field.setAccessible(false);
 			}
 			preparedStatement.execute();
-		} catch (SQLException | IllegalArgumentException | IllegalAccessException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
-		}
-		finally {
-			if(connection != null)
-				try {
-					connection.close();
-				} catch (SQLException e) {
-					e.printStackTrace();
-				}
 		}
 		
 	}
@@ -292,30 +282,13 @@ public class GoToBed {
 		sb.append(columnName).append(" = ?");
 		String sql = sb.toString();
 		System.out.println(sql);
-		Connection connection = null;
-		try {
-			 connection = bedProvider.getConnection();
+		try (Connection connection = bedProvider.getConnection()){
 			 PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			 Object value = id.get(object);
 			 preparedStatement.setObject(1, value);
 			 preparedStatement.execute();
-		} catch (SQLException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
-			return;
-		} catch (IllegalArgumentException e) {
-			e.printStackTrace();
-			return;
-		} catch (IllegalAccessException e) {
-			e.printStackTrace();
-			return;
-		}
-		finally {
-			if(connection != null)
-				try {
-					connection.close();
-				} catch (SQLException e) {
-					e.printStackTrace();
-				}
 		}
 		
 	}
@@ -332,14 +305,12 @@ public class GoToBed {
 			if(i<list.size()-1)
 				sb.append(",");
 		}
-		sb.append("where ");
+		sb.append(" where ");
 		Field id = getIdFieldFor(clazz);
 		String idColumnName = getColumnNameFor(id);
 		sb.append(idColumnName).append(" = ? ");
 		String sql = sb.toString();
-		Connection connection = null;
-		try {
-			connection = bedProvider.getConnection();
+		try (Connection connection = bedProvider.getConnection()){
 			PreparedStatement statement = connection.prepareStatement(sql);
 			for(int i=0; i<list.size(); i++) {
 				Field field = list.get(i);
@@ -349,23 +320,8 @@ public class GoToBed {
 			}
 			statement.setObject(list.size()+1, id.get(object));
 			statement.execute();
-		} catch (SQLException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
-			return;
-		} catch (IllegalArgumentException e) {
-			e.printStackTrace();
-			return;
-		} catch (IllegalAccessException e) {
-			e.printStackTrace();
-			return;
-		}
-		finally {
-			if(connection != null)
-				try {
-					connection.close();
-				} catch (SQLException e) {
-					e.printStackTrace();
-				}
 		}
 	}
 	

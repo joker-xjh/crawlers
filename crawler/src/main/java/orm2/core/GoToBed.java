@@ -1,6 +1,7 @@
 package orm2.core;
 
 import java.io.Serializable;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.sql.Connection;
@@ -21,20 +22,23 @@ import org.reflections.Reflections;
 import orm2.annotations.Awake;
 import orm2.annotations.Sleeper;
 import orm2.annotations.SleeperId;
-import orm2.bedprovider.BedProvider;
-import orm2.bedprovider.JDBCBedProvider;
 import orm2.exceptions.BedException;
+import orm2.pool.imp.ConnectionPool;
+import orm2.pool.interfaces.Pool;
 
 public class GoToBed {
 	
-	private BedProvider bedProvider;
+	//private BedProvider bedProvider;
+	
+	private Pool<Connection> pool;
+	
+//	public GoToBed() {
+//		this(new JDBCBedProvider());
+//	}
 	
 	public GoToBed() {
-		this(new JDBCBedProvider());
-	}
-	
-	public GoToBed(BedProvider bedProvider) {
-		this.bedProvider = bedProvider;
+		//this.bedProvider = bedProvider;
+		pool = new ConnectionPool(10);
 		Reflections reflections = new Reflections();
 		Set<Class<?>> sleepers = reflections.getTypesAnnotatedWith(Sleeper.class);
 		try {
@@ -60,13 +64,17 @@ public class GoToBed {
 	//检查类对应的表是否存在
 	private boolean checkTableExists(Class<?> clazz) throws BedException{
 		boolean exists = false;
-		try(Connection connection = bedProvider.getConnection()) {
+		Connection connection = pool.get();
+		try{
 			DatabaseMetaData databaseMetaData = connection.getMetaData();
 			ResultSet resultSet = databaseMetaData.getTables(null, null, getTableName(clazz), null);
 			if(resultSet.next())
 				exists = true;
 		} catch (SQLException e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 		return exists;
 	}
@@ -96,7 +104,8 @@ public class GoToBed {
 	//返回已存在的表中的列名
 	private Set<String> getTableColumns (Class<?> clazz) throws BedException {
 		Set<String> columns = new HashSet<>();
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try{
 			DatabaseMetaData databaseMetaData = connection.getMetaData();
 			ResultSet resultSet = databaseMetaData.getTables(null, null, getTableName(clazz), null);
 			ResultSetMetaData resultSetMetaData = resultSet.getMetaData();
@@ -107,6 +116,8 @@ public class GoToBed {
 			}
 		} catch (SQLException e) {
 			throw new BedException(e);
+		}finally {
+			pool.release(connection);
 		}
 		return columns;
 	}
@@ -180,11 +191,15 @@ public class GoToBed {
 		sb.append(columnType);
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try {
 			Statement statement = connection.createStatement();
 			statement.execute(sql);
 		} catch (SQLException e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 	}
 	
@@ -208,11 +223,15 @@ public class GoToBed {
 		sb.append(" ) ");
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try {
 			Statement statement = connection.createStatement();
 			statement.execute(sql);
 		} catch (SQLException e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 	}
 	
@@ -258,7 +277,8 @@ public class GoToBed {
 		sb.append(" ) ");
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try{
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			for(int i=0; i<list.size(); i++) {
 				Field field = list.get(i);
@@ -267,6 +287,9 @@ public class GoToBed {
 			preparedStatement.execute();
 		} catch (Exception e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 	}
 	
@@ -278,12 +301,16 @@ public class GoToBed {
 		sb.append(" where ").append(getColumnName(id)).append(" = ?");
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try{
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			preparedStatement.setObject(1, id.get(object));
 			preparedStatement.execute();
 		} catch (Exception e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 	}
 	
@@ -303,7 +330,8 @@ public class GoToBed {
 		sb.append(" where ").append(getColumnName(id)).append(" = ? ");
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try {
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			for(int i=0; i<list.size(); i++) {
 				Field field = list.get(i);
@@ -313,6 +341,9 @@ public class GoToBed {
 			preparedStatement.execute();
 		} catch (Exception e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 	}
 	
@@ -326,7 +357,8 @@ public class GoToBed {
 		sb.append(" where ").append(getColumnName(idField)).append(" = ? ");
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try{
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			preparedStatement.setObject(1, id);
 			ResultSet resultSet = preparedStatement.executeQuery();
@@ -344,6 +376,9 @@ public class GoToBed {
 		} catch (Exception e) {
 			throw new BedException(e);
 		}
+		finally {
+			pool.release(connection);
+		}
 		
 		return obj;
 	}
@@ -356,7 +391,8 @@ public class GoToBed {
 		sb.append("select * from ").append(getTableName(clazz));
 		String sql = sb.toString();
 		System.out.println(sql);
-		try (Connection connection = bedProvider.getConnection()){
+		Connection connection = pool.get();
+		try {
 			PreparedStatement preparedStatement = connection.prepareStatement(sql);
 			ResultSet resultSet = preparedStatement.executeQuery();
 			List<Field> fields = getSleeperColumns(clazz);
@@ -371,6 +407,9 @@ public class GoToBed {
 			}
 		} catch (Exception e) {
 			throw new BedException(e);
+		}
+		finally {
+			pool.release(connection);
 		}
 		
 		return objects;

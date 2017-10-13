@@ -386,6 +386,49 @@ public class MyLinkedBlockingQueue<T> {
 		}
 	}
 	
+	 public int drainTo(Collection<? super T> c, int maxElements) {
+		 if(c == null)
+			 throw new NullPointerException();
+		 if(c == this)
+			 throw new IllegalArgumentException();
+		 if(maxElements <= 0)
+			 return 0;
+		 boolean signalNotFull = false;
+		 final ReentrantLock takeLock = this.takeLock;
+		 takeLock.lock();
+		 try {
+			 int n = Math.min(maxElements, count.get());
+			 Node<T> node = head;
+			 int i = 0;
+			 try {
+				 while(i < n) {
+					 Node<T> p = node.next;
+					 c.add(p.val);
+					 p.val = null;
+					 node.next = node;
+					 node = p;
+					 i++;
+				 }
+				 return n;
+			} finally {
+				if(i > 0) {
+					head = node;
+					signalNotFull = (count.getAndAdd(-i) == capacity);
+				}
+			}
+		} finally {
+			takeLock.unlock();
+			if(signalNotFull)
+				signalNotFull();
+		}
+	 }
+	
+	
+	
+	
+	
+	
+	
 	
 
 }

@@ -27,6 +27,7 @@ public class MyCopyOnWriteArrayList<E> {
 		setArray(new Object[0]);
 	}
 	
+	
 	public int size() {
 		return getArray().length;
 	}

@@ -1,6 +1,10 @@
 package demo30;
 
+import java.io.Serializable;
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.AbstractOwnableSynchronizer;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.LockSupport;
 
 @SuppressWarnings("all")
@@ -40,11 +44,18 @@ public class AQS extends AbstractOwnableSynchronizer{
 			return nextWaiter == SHARED;
 		}
 		
-		Node(){}
+		Node() {
+			
+		}
 		
 		Node (Thread thread, Node mode){
 			this.thread = thread;
 			this.nextWaiter = mode;
+		}
+		
+		Node(Thread thread, int status) {
+			this.thread = thread;
+			this.waitStatus = status;
 		}
 		
 		Node predecessor() {
@@ -87,7 +98,13 @@ public class AQS extends AbstractOwnableSynchronizer{
 	
 	
 	public final void acquire(int arg) {
-		
+		if(!tryAqquire(arg)
+			&& acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+			selfInterrupt();
+	}
+	
+	static void selfInterrupt() {
+		Thread.currentThread().interrupt();
 	}
 	
 	protected boolean tryAqquire(int acquires) {
@@ -159,11 +176,18 @@ public class AQS extends AbstractOwnableSynchronizer{
 					failed = false;
 					return interrupted;
 				}
+				if(shouldParkAfterFailedAcquire(p, node)
+					&& parkAndCheckInterrupt())
+					interrupted = true;
 			}
 			
 		} finally {
 			if(failed);
 		}
+	}
+	
+	protected boolean isHeldExclusively() {
+		throw new UnsupportedOperationException();
 	}
 	
 	private static boolean shouldParkAfterFailedAcquire(Node pre, Node node) {
@@ -226,7 +250,19 @@ public class AQS extends AbstractOwnableSynchronizer{
 		return false;
 	}
 	
+	public final boolean release(int arg) {
+		if(tryRelease(arg)) {
+			Node h = head;
+			if(h!=null && h.waitStatus != 0)
+				unparkSuccessor(h);
+			return true;
+		}
+		return false;
+	}
 	
+	protected boolean tryRelease(int arg) {
+		throw new UnsupportedOperationException();
+	}
 	
 	 final class FairSync extends AQS {
 		
@@ -252,22 +288,175 @@ public class AQS extends AbstractOwnableSynchronizer{
 			setState(c);
 			return free;
 		}
+	}
+	 
+	
+	
+	public class ConditionObject implements Condition ,Serializable{
 		
+		private transient Node firstWaiter;
+		private transient Node lastWaiter;
 		
-		public final boolean release(int arg) {
-			if(tryRelease(arg)) {
-				Node h = head;
-				if(h!=null && h.waitStatus != 0)
-					unparkSuccessor(h);
-				return true;
+		private Node addConditionWaiter() {
+			Node t = lastWaiter;
+			if(t != null && t.waitStatus != Node.CONDITION) {
+				unlinkCancelledWaiters();
+				t = lastWaiter;
 			}
-			return false;
+			Node node = new Node(Thread.currentThread(), Node.CONDITION);
+			if(t == null)
+				firstWaiter = node;
+			else
+				t.nextWaiter = node;
+			lastWaiter = node;
+			return node;
+		}
+		
+		private void unlinkCancelledWaiters() {
+			Node t = firstWaiter;
+			Node pre = null;
+			while(t != null) {
+				Node next = t.nextWaiter;
+				if(t.waitStatus != Node.CONDITION) {
+					t.nextWaiter = null;
+					if(pre == null)
+						firstWaiter = next;
+					else
+						pre.nextWaiter = next;
+					if(next == null)
+						lastWaiter = pre;
+				}
+				else
+					pre = t;
+				t = next;
+			}
+		}
+		
+		final int fullyRelease(Node node) {
+			boolean failed = true;
+			try {
+				int savedStatus = getState();
+				if(release(savedStatus)) {
+					failed = false;
+					return savedStatus;
+				}
+				else {
+					throw new IllegalMonitorStateException();
+				}
+			} finally {
+				if(failed)
+					node.waitStatus = Node.CANCELED;
+			}
+		}
+		
+		final boolean isOnSyncQueue(Node node) {
+			if(node.waitStatus == Node.CONDITION || node.pre == null)
+				return false;
+			if(node.next != null)
+				return true;
+			return findNodeFromTail(node);
+		}
+		
+		private boolean findNodeFromTail(Node node) {
+			Node t = tail;
+			for(;;) {
+				if(t == node)
+					return true;
+				else if(t == null)
+					return false;
+				t = t.pre;
+			}
 		}
 		
 		
+
+		@Override
+		public void await() throws InterruptedException {
+			if(Thread.interrupted())
+				throw new InterruptedException();
+			Node node = addConditionWaiter();
+			int savedStatus = fullyRelease(node);
+			int interruptMode = 0;
+			while(!isOnSyncQueue(node)) {
+				LockSupport.park(this);
+				if((interruptMode = checkInterruptWhileWaiting(node)) !=0)
+					break;
+			}
+			
+		}
+		
+		private void doSignal(Node node) {
+			do {
+				if((firstWaiter = node.next) == null)
+					lastWaiter = null;
+				node.next = null;
+			} while (!transferForSignal(node) && (node = firstWaiter) != null);
+		}
+		
+		final boolean transferForSignal(Node node) {
+			if(!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+				return false;
+			Node p = enq(node);
+			int ws = p.waitStatus;
+			if(ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+				LockSupport.unpark(node.thread);
+			return true;
+		}
+		
+		private int checkInterruptWhileWaiting(Node node) {
+			return Thread.interrupted() ? (
+					transferAfterCancelledWait(node) ? -1 : 1
+					) : 0;
+		}
+		
+		
+		final boolean transferAfterCancelledWait(Node node) {
+			if(compareAndSetWaitStatus(node, Node.CONDITION, 0)) {
+				enq(node);
+				return true;
+			}
+			while(!isOnSyncQueue(node))
+				Thread.yield();
+			return false;
+		}
+		
+
+		@Override
+		public void awaitUninterruptibly() {
+			
+		}
+
+		@Override
+		public long awaitNanos(long nanosTimeout) throws InterruptedException {
+			// TODO Auto-generated method stub
+			return 0;
+		}
+
+		@Override
+		public boolean await(long time, TimeUnit unit) throws InterruptedException {
+			return false;
+		}
+
+		@Override
+		public boolean awaitUntil(Date deadline) throws InterruptedException {
+			return false;
+		}
+
+		@Override
+		public void signal() {
+			if(!isHeldExclusively())
+				throw new IllegalMonitorStateException();
+			Node first = firstWaiter;
+			if(first != null)
+				doSignal(first);
+		}
+
+		@Override
+		public void signalAll() {
+			
+		}
+		
 	}
-	
-	
 	
 	
 	

@@ -383,7 +383,22 @@ public class AQS extends AbstractOwnableSynchronizer{
 					break;
 			}
 			
+			if(acquireQueued(node, savedStatus) && interruptMode != -1)
+				interruptMode = 1;
+			if(node.nextWaiter != null)
+				unlinkCancelledWaiters();
+			if(interruptMode != 0)
+				reportInterruptAfterWait(interruptMode);
 		}
+		
+		private void reportInterruptAfterWait(int interruptMode) throws InterruptedException {
+			if(interruptMode == -1)
+				throw new InterruptedException();
+			else if(interruptMode == 1)
+				selfInterrupt();
+		}
+		
+		
 		
 		private void doSignal(Node node) {
 			do {
@@ -423,7 +438,16 @@ public class AQS extends AbstractOwnableSynchronizer{
 
 		@Override
 		public void awaitUninterruptibly() {
-			
+			Node node = addConditionWaiter();
+			int savedStatus = fullyRelease(node);
+			boolean interrupted = false;
+			while(!isOnSyncQueue(node)) {
+				LockSupport.park(this);
+				if(Thread.interrupted())
+					interrupted = true;
+			}
+			if(acquireQueued(node, savedStatus) || interrupted)
+				selfInterrupt();
 		}
 
 		@Override
@@ -434,7 +458,30 @@ public class AQS extends AbstractOwnableSynchronizer{
 
 		@Override
 		public boolean await(long time, TimeUnit unit) throws InterruptedException {
-			return false;
+			boolean timeout = false;
+			if(Thread.interrupted())
+				throw new InterruptedException();
+			long nanostime = unit.toNanos(time);
+			Node node = addConditionWaiter();
+			int savedStatus = fullyRelease(node);
+			long deadline = System.nanoTime() + nanostime;
+			int interruptMode = 0;
+			while(!isOnSyncQueue(node)) {
+				if(nanostime <= 0) {
+					timeout = transferAfterCancelledWait(node);
+					break;
+				}
+				if((interruptMode = checkInterruptWhileWaiting(node))!=0)
+					break;
+				nanostime = deadline - System.nanoTime();
+			}
+			if(acquireQueued(node, savedStatus) && interruptMode != -1)
+				interruptMode = 1;
+			if(node.nextWaiter != null)
+				unlinkCancelledWaiters();
+			if(interruptMode != 0)
+				reportInterruptAfterWait(interruptMode);
+			return !timeout;
 		}
 
 		@Override

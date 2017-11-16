@@ -73,6 +73,13 @@ public class LocalCache {
 		return cache.size();
 	}
 	
+	public static void clear() {
+		if(size() > 0) {
+			cache.clear();
+		}
+		timer.cancel();
+	}
+	
 	
 	public static void remove(String key) {
 		cache.remove(key);

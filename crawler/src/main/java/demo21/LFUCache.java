@@ -79,7 +79,7 @@ public class LFUCache<K, V> {
 	
 	
 	public void put(K key, V value) {
-		
+		this.put(key, value, -1);
 	}
 	
 	public void put(K key, V value, long timestamp) {

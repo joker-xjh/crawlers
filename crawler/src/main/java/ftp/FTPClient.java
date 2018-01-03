@@ -3,6 +3,7 @@ package ftp;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -66,8 +67,40 @@ public class FTPClient {
 				String cmd = cmds[0];
 				switch(cmd) {
 				case "GET" :
-					
+					if(cmds.length != 2) {
+						System.out.println("命令格式错误");
+						break;
+					}
+					if(doGet(cmds[1])) {
+						System.out.println("命令成功");
+					}
+					else {
+						System.out.println("命令失败");
+					}
+					break;
+				case "PUT":
+					if(cmds.length != 2) {
+						System.out.println("命令格式错误");
+						break;
+					}
+					if(doPut(cmds[1])) {
+						System.out.println("命令成功");
+					}
+					else {
+						System.out.println("命令失败");
+					}
+					break;
+				case "LIST":
+					if(cmds.length != 1) {
+						System.out.println("命令格式错误");
+						break;
+					}
+					doList();
+					break;
+				default :
+					System.out.println("无效的命令");
 				}
+				line = userScanner.nextLine();
 			}
 			ctrlWriter.println("QUIT");
 			ctrlSocket.close();
@@ -119,13 +152,51 @@ public class FTPClient {
 			out.flush();
 			
 		} catch (IOException e) {
-			
+			System.out.println("接收文件错误");
+			if(file.exists())
+				file.delete();
+		}
+		if(ctrlScanner.nextLine().equals("OK")) {
+			System.out.println("接受文件成功");
+			result = true;
+		}
+		else {
+			file.delete();
+			System.out.println("接收文件错误");
 		}
 		
 		return result;
 	}
 	
-	
+	private static boolean doPut(String fileName) {
+		boolean result = false;
+		File file = new File(fileDir+fileName);
+		if(!file.exists()) {
+			System.out.println(file+"不存在");
+			return result;
+		}
+		try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(file));
+				BufferedOutputStream out = new BufferedOutputStream(dataSocket.getOutputStream())){
+			long size = file.length();
+			dataWriter.println(size);
+			int temp = -1;
+			while((temp = in.read(buf, 0, buf.length)) != -1) {
+				out.write(buf, 0, temp);
+			}
+			out.flush();
+		} catch (IOException e) {
+			System.out.println("发送文件错误");
+		}
+		if(ctrlScanner.nextLine().equals("OK")) {
+			System.out.println("发送文件成功");
+			result = true;
+		}
+		else {
+			System.out.println("发送文件错误");
+		}
+		
+		return result;
+	}
 	
 	
 	

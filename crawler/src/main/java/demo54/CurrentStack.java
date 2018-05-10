@@ -25,6 +25,8 @@ public class CurrentStack<T> {
 		Node newTop = null, oldTop = null;
 		do {
 			oldTop = stack.get();
+			if(oldTop == null)
+				return null;
 			newTop = oldTop.next;
 		} while (!stack.compareAndSet(oldTop, newTop));
 		return oldTop.val;
